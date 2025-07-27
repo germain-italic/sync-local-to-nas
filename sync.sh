@@ -52,14 +52,17 @@ echo "$(date): Début de la synchronisation" | tee -a "$LOG_FILE"
 # Options rsync:
 # -a : mode archive (récursif, préserve les liens, etc.)
 # -v : verbose
-# -c : utilise checksum au lieu de time/size
 # -S : sparse files
 # --partial : garde les fichiers partiels
-# --progress : affiche le progrès
+# --progress : affiche le progrès en temps réel
+# --stats : statistiques détaillées
+# --human-readable : tailles lisibles (MB, GB)
+# --itemize-changes : détail des changements par fichier
 # --log-file : fichier de log
 # -e ssh : utilise SSH pour la connexion
+# Note: -c (checksum) retiré pour améliorer les performances
 SSH_OPTS="ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -o ConnectTimeout=30"
-RSYNC_OPTS="-avcS --partial --progress --log-file=$LOG_FILE -e $RSYNC_EXTRA_OPTS"
+RSYNC_OPTS="-avS --partial --progress --stats --human-readable --itemize-changes --log-file=$LOG_FILE -e $RSYNC_EXTRA_OPTS"
 
 # Fonction de retry avec backoff exponentiel
 sync_with_retry() {
