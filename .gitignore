@@ -1,0 +1,6 @@
+# Fichier de configuration locale
+.env
+
+# Logs
+*.log
+/tmp/sync_nas.log
