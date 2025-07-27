@@ -22,14 +22,11 @@ if [ -z "$NAS_HOST" ] || [ -z "$DESTINATION" ]; then
     exit 1
 fi
 
-# Récupération de tous les dossiers SOURCE_*
+# Récupération de tous les dossiers SOURCE_* dans l'ordre numérique
 SOURCE_ARRAY=()
-while IFS= read -r -d '' var; do
-    if [[ $var == SOURCE_* ]]; then
-        varname=${var%=*}
-        SOURCE_ARRAY+=("${!varname}")
-    fi
-done < <(env -0)
+for var in $(env | grep '^SOURCE_[0-9]' | sort -V | cut -d= -f1); do
+    SOURCE_ARRAY+=("${!var}")
+done
 
 # Vérification qu'au moins un dossier source est défini
 if [ ${#SOURCE_ARRAY[@]} -eq 0 ]; then
