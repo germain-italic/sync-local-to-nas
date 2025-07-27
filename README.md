@@ -1,6 +1,6 @@
 # sync-local-to-nas
 
-Script de synchronisation rsync vers NAS.
+Rsync synchronization script to NAS.
 
 ## Installation
 
@@ -12,10 +12,18 @@ cp .env.example .env
 
 ## Configuration
 
-Éditez `.env` avec vos chemins et hôte NAS.
+Edit `.env` with your paths and NAS host.
 
-## Utilisation
+## Usage
 
 ```bash
 ./sync.sh
 ```
+
+## Behavior
+
+- **One-way sync**: local → NAS only
+- **Checksum verification**: compares file checksums, not timestamps
+- **No deletion**: existing NAS files are preserved
+- **No download**: never downloads files to local
+- **Resume support**: partial transfers can be resumed
