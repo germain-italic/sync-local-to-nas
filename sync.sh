@@ -1,36 +1,36 @@
 #!/bin/bash
 
-# Script de synchronisation NAS
-# Synchronise les dossiers sources vers le NAS de destination
+# NAS synchronization script
+# Synchronizes source folders to destination NAS
 
 set -e
 
-# Chargement de la configuration depuis .env
+# Load configuration from .env
 if [ ! -f .env ]; then
-    echo "Erreur: Le fichier .env n'existe pas. Créez-le à partir de .env.example"
+    echo "Error: .env file does not exist. Create it from .env.example"
     exit 1
 fi
 
-# Chargement des variables d'environnement
+# Load environment variables
 set -a
 source .env
 set +a
 
-# Validation des variables requises
+# Validate required variables
 if [ -z "$NAS_HOST" ] || [ -z "$DESTINATION" ]; then
-    echo "Erreur: Variables manquantes dans .env (NAS_HOST, DESTINATION)"
+    echo "Error: Missing variables in .env (NAS_HOST, DESTINATION)"
     exit 1
 fi
 
-# Récupération de tous les dossiers SOURCE_* dans l'ordre numérique
+# Get all SOURCE_* folders in numerical order
 SOURCE_ARRAY=()
 for var in $(env | grep '^SOURCE_[0-9]' | sort -V | cut -d= -f1); do
     SOURCE_ARRAY+=("${!var}")
 done
 
-# Vérification qu'au moins un dossier source est défini
+# Check that at least one source folder is defined
 if [ ${#SOURCE_ARRAY[@]} -eq 0 ]; then
-    echo "Erreur: Aucun dossier source défini (utilisez SOURCE_1, SOURCE_2, etc.)"
+    echo "Error: No source folder defined (use SOURCE_1, SOURCE_2, etc.)"
     exit 1
 fi
 
@@ -39,32 +39,32 @@ FULL_DESTINATION="$NAS_HOST:$DESTINATION"
 LOG_FILE="/tmp/sync_nas.log"
 MAX_ATTEMPTS=${MAX_ATTEMPTS:-3}
 
-# Vérification des dossiers source
+# Check source folders exist
 for source in "${SOURCE_ARRAY[@]}"; do
     if [ ! -d "$source" ]; then
-        echo "Erreur: Le dossier source $source n'existe pas"
+        echo "Error: Source folder $source does not exist"
         exit 1
     fi
 done
 
-echo "$(date): Début de la synchronisation" | tee -a "$LOG_FILE"
+echo "$(date): Starting synchronization" | tee -a "$LOG_FILE"
 
-# Options rsync:
-# -a : mode archive (récursif, préserve les liens, etc.)
-# -v : verbose
-# -S : sparse files
-# --partial : garde les fichiers partiels
-# --progress : affiche le progrès en temps réel
-# --stats : statistiques détaillées
-# --human-readable : tailles lisibles (MB, GB)
-# --itemize-changes : détail des changements par fichier
-# --log-file : fichier de log
-# -e ssh : utilise SSH pour la connexion
-# Note: -c (checksum) retiré pour améliorer les performances
+# Base rsync options
+BASE_OPTS="-avS --partial --progress --stats --human-readable --itemize-changes --log-file=$LOG_FILE"
+
+# Add checksum if enabled
+if [ "$USE_CHECKSUM" = "true" ]; then
+    echo "Checksum mode enabled (slower but more reliable for torrents)"
+    CHECKSUM_OPT="-c"
+else
+    echo "Fast mode enabled (based on date/size)"
+    CHECKSUM_OPT=""
+fi
+
 SSH_OPTS="ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -o ConnectTimeout=30"
-RSYNC_OPTS="-avS --partial --progress --stats --human-readable --itemize-changes --log-file=$LOG_FILE -e $RSYNC_EXTRA_OPTS"
+RSYNC_OPTS="$BASE_OPTS $CHECKSUM_OPT -e $RSYNC_EXTRA_OPTS"
 
-# Fonction de retry avec backoff exponentiel
+# Retry function with exponential backoff
 sync_with_retry() {
     local source="$1"
     local destination="$2"
@@ -72,31 +72,31 @@ sync_with_retry() {
     local attempt=1
     
     while [ $attempt -le $MAX_ATTEMPTS ]; do
-        echo "Tentative $attempt/$MAX_ATTEMPTS pour $source"
+        echo "Attempt $attempt/$MAX_ATTEMPTS for $source"
         if rsync $RSYNC_OPTS "$SSH_OPTS" $exclude_opts "$source" "$destination"; then
-            echo "Synchronisation réussie pour $source"
+            echo "Synchronization successful for $source"
             return 0
         else
-            echo "Échec de la synchronisation (tentative $attempt/$MAX_ATTEMPTS)"
+            echo "Synchronization failed (attempt $attempt/$MAX_ATTEMPTS)"
             if [ $attempt -lt $MAX_ATTEMPTS ]; then
                 local wait_time=$((attempt * 30))
-                echo "Attente de ${wait_time}s avant la prochaine tentative..."
+                echo "Waiting ${wait_time}s before next attempt..."
                 sleep $wait_time
             fi
             attempt=$((attempt + 1))
         fi
     done
     
-    echo "ERREUR: Synchronisation échouée après $MAX_ATTEMPTS tentatives pour $source"
+    echo "ERROR: Synchronization failed after $MAX_ATTEMPTS attempts for $source"
     return 1
 }
 
-# Synchronisation de tous les dossiers source
+# Synchronize all source folders
 for i in "${!SOURCE_ARRAY[@]}"; do
     source="${SOURCE_ARRAY[$i]}"
-    echo "Synchronisation de $source vers $FULL_DESTINATION"
+    echo "Synchronizing $source to $FULL_DESTINATION"
     sync_with_retry "$source" "$FULL_DESTINATION" ""
 done
 
-echo "$(date): Synchronisation terminée" | tee -a "$LOG_FILE"
-echo "Log disponible dans: $LOG_FILE"
+echo "$(date): Synchronization completed" | tee -a "$LOG_FILE"
+echo "Log available at: $LOG_FILE"
