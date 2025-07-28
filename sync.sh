@@ -133,13 +133,15 @@ pre_verify_files() {
     echo "Pre-verifying files in $source_dir..."
     
     while IFS= read -r -d '' file; do
-        local rel_path="${file#$source_dir/}"
+        # Ensure absolute path
+        local abs_file="$(realpath "$file")"
+        local rel_path="${abs_file#$source_dir/}"
         local remote_path="$dest_dir$rel_path"
         
         if remote_file_exists "$remote_path"; then
-            existing_files+=("$file")
+            existing_files+=("$abs_file")
         else
-            new_files+=("$file")
+            new_files+=("$abs_file")
         fi
     done < <(find "$source_dir" -type f -print0)
     
@@ -149,15 +151,16 @@ pre_verify_files() {
     if [ ${#new_files[@]} -gt 0 ]; then
         echo "Transferring ${#new_files[@]} new files (fast mode)..."
         for file in "${new_files[@]}"; do
-            local rel_path="${file#$source_dir/}"
+            local abs_source_dir="$(realpath "$source_dir")"
+            local rel_path="${file#$abs_source_dir/}"
             local dir_path=$(dirname "$rel_path")
             
             # Create remote directory if needed
             ssh $(echo "$NAS_HOST" | cut -d: -f1) "mkdir -p '$dest_dir$dir_path'" 2>/dev/null || true
             
-            # Transfer file with compression
+            # Transfer file with compression using absolute path
             if ! rsync -avSz --progress "$file" "$NAS_HOST:$dest_dir$dir_path/" 2>>"$ERROR_LOG"; then
-                echo "$(date): TRANSFER FAILED - $file" | tee -a "$ERROR_LOG"
+                echo "$(date): TRANSFER FAILED - $rel_path" | tee -a "$ERROR_LOG"
             fi
         done
     fi
@@ -166,7 +169,8 @@ pre_verify_files() {
     if [ ${#existing_files[@]} -gt 0 ] && [ "$USE_CHECKSUM" = "true" ]; then
         echo "Verifying ${#existing_files[@]} existing files with checksums..."
         for file in "${existing_files[@]}"; do
-            local rel_path="${file#$source_dir/}"
+            local abs_source_dir="$(realpath "$source_dir")"
+            local rel_path="${file#$abs_source_dir/}"
             local remote_path="$dest_dir$rel_path"
             
             # Get remote file info
@@ -178,7 +182,7 @@ pre_verify_files() {
             if [ "$local_size" != "$remote_size" ]; then
                 echo "Size mismatch for $rel_path, transferring..."
                 if ! rsync -avSz --progress "$file" "$NAS_HOST:$(dirname "$remote_path")/" 2>>"$ERROR_LOG"; then
-                    echo "$(date): TRANSFER FAILED - $file (size mismatch)" | tee -a "$ERROR_LOG"
+                    echo "$(date): TRANSFER FAILED - $rel_path (size mismatch)" | tee -a "$ERROR_LOG"
                 fi
             else
                 echo "File $rel_path appears identical (size match)"
