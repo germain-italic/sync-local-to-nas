@@ -132,18 +132,20 @@ pre_verify_files() {
     
     echo "Pre-verifying files in $source_dir..."
     
+    # Get absolute source directory path first
+    local abs_source_dir="$(realpath "$source_dir")"
+    
     while IFS= read -r -d '' file; do
-        # Ensure absolute path
-        local abs_file="$(realpath "$file")"
-        local rel_path="${abs_file#$source_dir/}"
+        # file is already absolute from find with absolute source_dir
+        local rel_path="${file#$abs_source_dir/}"
         local remote_path="$dest_dir$rel_path"
         
         if remote_file_exists "$remote_path"; then
-            existing_files+=("$abs_file")
+            existing_files+=("$file")
         else
-            new_files+=("$abs_file")
+            new_files+=("$file")
         fi
-    done < <(find "$source_dir" -type f -print0)
+    done < <(find "$abs_source_dir" -type f -print0)
     
     echo "Found ${#new_files[@]} new files, ${#existing_files[@]} existing files"
     
@@ -151,7 +153,6 @@ pre_verify_files() {
     if [ ${#new_files[@]} -gt 0 ]; then
         echo "Transferring ${#new_files[@]} new files (fast mode)..."
         for file in "${new_files[@]}"; do
-            local abs_source_dir="$(realpath "$source_dir")"
             local rel_path="${file#$abs_source_dir/}"
             local dir_path=$(dirname "$rel_path")
             
@@ -169,7 +170,6 @@ pre_verify_files() {
     if [ ${#existing_files[@]} -gt 0 ] && [ "$USE_CHECKSUM" = "true" ]; then
         echo "Verifying ${#existing_files[@]} existing files with checksums..."
         for file in "${existing_files[@]}"; do
-            local abs_source_dir="$(realpath "$source_dir")"
             local rel_path="${file#$abs_source_dir/}"
             local remote_path="$dest_dir$rel_path"
             
