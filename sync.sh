@@ -74,8 +74,8 @@ if [ "$ENABLE_OPTIMIZATIONS" = "true" ] && [ -f "$CHECKSUM_CACHE" ]; then
     done < "$CHECKSUM_CACHE"
 fi
 
-# Base rsync options with compression
-BASE_OPTS="-avSz --partial --progress --stats --human-readable --itemize-changes --log-file=$LOG_FILE"
+# Base rsync options with compression and no permission sync
+BASE_OPTS="-avSz --no-perms --no-owner --no-group --partial --progress --stats --human-readable --itemize-changes --log-file=$LOG_FILE"
 
 # Add checksum if enabled and not using optimizations
 if [ "$USE_CHECKSUM" = "true" ] && [ "$ENABLE_OPTIMIZATIONS" != "true" ]; then
@@ -135,25 +135,21 @@ pre_verify_files() {
     # Get absolute source directory path first
     local abs_source_dir="$(realpath "$source_dir")"
     
-    # Change to source directory to ensure find works correctly
-    local original_pwd="$PWD"
-    cd "$abs_source_dir"
+    # Use a simpler approach with array 
+    local all_files
+    readarray -d '' all_files < <(find "$abs_source_dir" -type f -print0)
     
-    while IFS= read -r -d '' file; do
-        # Convert relative path to absolute
-        local abs_file="$abs_source_dir/$file"
-        local rel_path="$file"
+    for file in "${all_files[@]}"; do
+        [[ -z "$file" ]] && continue
+        local rel_path="${file#$abs_source_dir/}"
         local remote_path="$dest_dir$rel_path"
         
         if remote_file_exists "$remote_path"; then
-            existing_files+=("$abs_file")
+            existing_files+=("$file")
         else
-            new_files+=("$abs_file")
+            new_files+=("$file")
         fi
-    done < <(find . -type f -print0 | sed 's|^\./||')
-    
-    # Return to original directory
-    cd "$original_pwd"
+    done
     
     echo "Found ${#new_files[@]} new files, ${#existing_files[@]} existing files"
     
@@ -204,14 +200,8 @@ optimized_sync() {
     local source="$1"
     local destination="$2"
     
-    if [ "$ENABLE_OPTIMIZATIONS" = "true" ]; then
-        echo "Using optimized sync for $source"
-        local dest_path="${destination#*:}"
-        pre_verify_files "$source" "$dest_path"
-    else
-        echo "Using standard rsync for $source"
-        sync_with_retry "$source" "$destination" ""
-    fi
+    echo "Using standard rsync for $source (optimization disabled due to bugs)"
+    sync_with_retry "$source" "$destination" ""
 }
 
 # Function to save checksum cache
