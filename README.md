@@ -18,6 +18,7 @@ Edit `.env` with your paths and NAS host:
 - `NAS_HOST`: Target NAS (user@hostname)
 - `DESTINATION`: Destination path on NAS
 - `USE_CHECKSUM`: Use checksums for verification (true/false)
+- `ENABLE_OPTIMIZATIONS`: Smart optimizations (true/false)
 - `MAX_ATTEMPTS`: Retry attempts on failure
 
 ## Usage
@@ -35,3 +36,8 @@ Edit `.env` with your paths and NAS host:
 - **Resume support**: partial transfers can be resumed
 - **Retry mechanism**: exponential backoff on failures
 - **Detailed logging**: progress, stats, and itemized changes
+- **Smart optimizations**: 
+  - Checksum cache (avoids recalculating identical files)
+  - Pre-verification (new files transferred without checksum checks)
+  - Size comparison for existing files
+  - Network compression
