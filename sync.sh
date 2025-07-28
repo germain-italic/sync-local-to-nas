@@ -37,18 +37,31 @@ fi
 # Configuration
 FULL_DESTINATION="$NAS_HOST:$DESTINATION"
 LOG_FILE="/tmp/sync_nas.log"
+ERROR_LOG="/tmp/sync_errors.log"
 MAX_ATTEMPTS=${MAX_ATTEMPTS:-3}
 ENABLE_OPTIMIZATIONS=${ENABLE_OPTIMIZATIONS:-false}
 CHECKSUM_CACHE=${CHECKSUM_CACHE:-"/tmp/sync_checksums.cache"}
 PARALLEL_JOBS=${PARALLEL_JOBS:-1}
 
-# Check source folders exist
+# Check source folders exist and log missing ones
+> "$ERROR_LOG"
+VALID_SOURCES=()
 for source in "${SOURCE_ARRAY[@]}"; do
     if [ ! -d "$source" ]; then
-        echo "Error: Source folder $source does not exist"
-        exit 1
+        echo "$(date): ERROR - Source folder does not exist: $source" | tee -a "$ERROR_LOG"
+        echo "Skipping missing source: $source"
+    else
+        VALID_SOURCES+=("$source")
     fi
 done
+
+# Update SOURCE_ARRAY with only valid sources
+SOURCE_ARRAY=("${VALID_SOURCES[@]}")
+
+if [ ${#SOURCE_ARRAY[@]} -eq 0 ]; then
+    echo "Error: No valid source folders found"
+    exit 1
+fi
 
 echo "$(date): Starting synchronization" | tee -a "$LOG_FILE"
 
@@ -143,7 +156,9 @@ pre_verify_files() {
             ssh $(echo "$NAS_HOST" | cut -d: -f1) "mkdir -p '$dest_dir$dir_path'" 2>/dev/null || true
             
             # Transfer file with compression
-            rsync -avSz --progress "$file" "$NAS_HOST:$dest_dir$dir_path/" || echo "Failed to transfer $file"
+            if ! rsync -avSz --progress "$file" "$NAS_HOST:$dest_dir$dir_path/" 2>>"$ERROR_LOG"; then
+                echo "$(date): TRANSFER FAILED - $file" | tee -a "$ERROR_LOG"
+            fi
         done
     fi
     
@@ -162,7 +177,9 @@ pre_verify_files() {
             # Quick size check first
             if [ "$local_size" != "$remote_size" ]; then
                 echo "Size mismatch for $rel_path, transferring..."
-                rsync -avSz --progress "$file" "$NAS_HOST:$(dirname "$remote_path")/" || echo "Failed to transfer $file"
+                if ! rsync -avSz --progress "$file" "$NAS_HOST:$(dirname "$remote_path")/" 2>>"$ERROR_LOG"; then
+                    echo "$(date): TRANSFER FAILED - $file (size mismatch)" | tee -a "$ERROR_LOG"
+                fi
             else
                 echo "File $rel_path appears identical (size match)"
             fi
@@ -207,11 +224,11 @@ sync_with_retry() {
     
     while [ $attempt -le $MAX_ATTEMPTS ]; do
         echo "Attempt $attempt/$MAX_ATTEMPTS for $source"
-        if rsync $RSYNC_OPTS "$SSH_OPTS" $exclude_opts "$source" "$destination"; then
+        if rsync $RSYNC_OPTS "$SSH_OPTS" $exclude_opts "$source" "$destination" 2>>"$ERROR_LOG"; then
             echo "Synchronization successful for $source"
             return 0
         else
-            echo "Synchronization failed (attempt $attempt/$MAX_ATTEMPTS)"
+            echo "$(date): SYNC FAILED - $source (attempt $attempt/$MAX_ATTEMPTS)" | tee -a "$ERROR_LOG"
             if [ $attempt -lt $MAX_ATTEMPTS ]; then
                 local wait_time=$((attempt * 30))
                 echo "Waiting ${wait_time}s before next attempt..."
@@ -221,7 +238,7 @@ sync_with_retry() {
         fi
     done
     
-    echo "ERROR: Synchronization failed after $MAX_ATTEMPTS attempts for $source"
+    echo "$(date): CRITICAL - Synchronization failed after $MAX_ATTEMPTS attempts for $source" | tee -a "$ERROR_LOG"
     return 1
 }
 
@@ -237,3 +254,17 @@ save_checksum_cache
 
 echo "$(date): Synchronization completed" | tee -a "$LOG_FILE"
 echo "Log available at: $LOG_FILE"
+
+# Show error summary
+if [ -s "$ERROR_LOG" ]; then
+    echo ""
+    echo "⚠️  ERRORS DETECTED - Check error log:"
+    echo "Error log: $ERROR_LOG"
+    echo ""
+    echo "Error summary:"
+    grep -c "TRANSFER FAILED\|SYNC FAILED\|CRITICAL\|ERROR" "$ERROR_LOG" | while read count; do
+        echo "- $count errors logged"
+    done
+else
+    echo "✅ No errors detected"
+fi
