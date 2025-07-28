@@ -135,17 +135,25 @@ pre_verify_files() {
     # Get absolute source directory path first
     local abs_source_dir="$(realpath "$source_dir")"
     
+    # Change to source directory to ensure find works correctly
+    local original_pwd="$PWD"
+    cd "$abs_source_dir"
+    
     while IFS= read -r -d '' file; do
-        # file is already absolute from find with absolute source_dir
-        local rel_path="${file#$abs_source_dir/}"
+        # Convert relative path to absolute
+        local abs_file="$abs_source_dir/$file"
+        local rel_path="$file"
         local remote_path="$dest_dir$rel_path"
         
         if remote_file_exists "$remote_path"; then
-            existing_files+=("$file")
+            existing_files+=("$abs_file")
         else
-            new_files+=("$file")
+            new_files+=("$abs_file")
         fi
-    done < <(find "$abs_source_dir" -type f -print0)
+    done < <(find . -type f -print0 | sed 's|^\./||')
+    
+    # Return to original directory
+    cd "$original_pwd"
     
     echo "Found ${#new_files[@]} new files, ${#existing_files[@]} existing files"
     
@@ -156,18 +164,12 @@ pre_verify_files() {
             local rel_path="${file#$abs_source_dir/}"
             local dir_path=$(dirname "$rel_path")
             
-            # Debug output
-            echo "DEBUG: file=$file"
-            echo "DEBUG: abs_source_dir=$abs_source_dir"
-            echo "DEBUG: rel_path=$rel_path"
-            echo "DEBUG: dir_path=$dir_path"
-            
             # Create remote directory if needed
             ssh $(echo "$NAS_HOST" | cut -d: -f1) "mkdir -p '$dest_dir$dir_path'" 2>/dev/null || true
             
             # Transfer file with compression using absolute path
             if ! rsync -avSz --progress "$file" "$NAS_HOST:$dest_dir$dir_path/" 2>>"$ERROR_LOG"; then
-                echo "$(date): TRANSFER FAILED - $(basename "$file")" | tee -a "$ERROR_LOG"
+                echo "$(date): TRANSFER FAILED - $rel_path" | tee -a "$ERROR_LOG"
             fi
         done
     fi
