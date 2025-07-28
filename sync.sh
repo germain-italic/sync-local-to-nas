@@ -156,12 +156,18 @@ pre_verify_files() {
             local rel_path="${file#$abs_source_dir/}"
             local dir_path=$(dirname "$rel_path")
             
+            # Debug output
+            echo "DEBUG: file=$file"
+            echo "DEBUG: abs_source_dir=$abs_source_dir"
+            echo "DEBUG: rel_path=$rel_path"
+            echo "DEBUG: dir_path=$dir_path"
+            
             # Create remote directory if needed
             ssh $(echo "$NAS_HOST" | cut -d: -f1) "mkdir -p '$dest_dir$dir_path'" 2>/dev/null || true
             
             # Transfer file with compression using absolute path
             if ! rsync -avSz --progress "$file" "$NAS_HOST:$dest_dir$dir_path/" 2>>"$ERROR_LOG"; then
-                echo "$(date): TRANSFER FAILED - $rel_path" | tee -a "$ERROR_LOG"
+                echo "$(date): TRANSFER FAILED - $(basename "$file")" | tee -a "$ERROR_LOG"
             fi
         done
     fi
